@@ -303,10 +303,13 @@ class Translator(tf.Module):
 
         current_dir = os.getcwd()
         context_config = pickle.load(open(os.path.join(current_dir, 'encoding/context_encoder/context_tokenizer.pkl'), 'rb'))
+        context_config['config']['standardize'] = tf_lower_and_split_punct
         target_config = pickle.load(open(os.path.join(current_dir, 'encoding/target_encoder/target_tokenizer.pkl'), 'rb'))
-
-        context_text_processor = TextVectorization.from_config(context_config['config']).set_weights(context_config['weights'])
-        target_text_processor = TextVectorization.from_config(target_config['config']).set_weights(target_config['weights'])
+        target_config['config']['standardize'] = tf_lower_and_split_punct
+        context_text_processor = TextVectorization.from_config(context_config['config'])
+        context_text_processor.set_vocabulary(context_config['vocabulary'])
+        target_text_processor = TextVectorization.from_config(target_config['config'])
+        target_text_processor.set_vocabulary(target_config['vocabulary'])
 
         self.transformer = Transformer(
             context_text_processor=context_text_processor,
@@ -317,6 +320,6 @@ class Translator(tf.Module):
             num_layers=config.num_layers
         )
 
-    def call(self, texts):
+    def __call__(self, texts):
         results = self.transformer.translate(texts)
         return results
