@@ -334,8 +334,9 @@ class Translator(tf.Module):
             num_heads=config.num_heads,
             expansion=config.expansion,
             num_layers=config.num_layers,
-            pretrained=True
         )
+
+        self.transformer.load_pretrained_weights()
 
         """
         with warnings.catch_warnings():
