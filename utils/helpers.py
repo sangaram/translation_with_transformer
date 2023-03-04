@@ -19,7 +19,8 @@ def download_file(url:str):
 
     if not(os.path.exists(os.path.join(PROJECT_ROOT, ".cache"))):
         os.makedirs(os.path.join(PROJECT_ROOT, ".cache"))
-        CACHE_DIR = os.path.join(PROJECT_ROOT, ".cache")
+    
+    CACHE_DIR = os.path.join(PROJECT_ROOT, ".cache")
 
     res = requests.get(url, stream = True)
     filename = re.findall(r'filename="([a-zA-Z0-9_\-.]*)"', res.headers['Content-Disposition'])[0]
@@ -41,10 +42,10 @@ def download_file(url:str):
                 
         print("Done.\n")
         print("Extracting files ...")
-        shutil.unpack_archive(filename)
-        if os.path.exists("__MACOSX"):
+        shutil.unpack_archive(filename, extract_dir=CACHE_DIR)
+        if os.path.exists(os.path.join(CACHE_DIR, "__MACOSX")):
             # For macOS users
-            shutil.rmtree("__MACOSX")
+            shutil.rmtree(os.path.join(CACHE_DIR, "__MACOSX"))
         print("Done.")
         print(f"Deleting {filename} ...")
         os.remove(filename)

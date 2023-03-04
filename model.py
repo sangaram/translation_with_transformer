@@ -271,10 +271,12 @@ class Transformer(tf.keras.Model):
             num_layers=num_layers
         )
 
+        """
         if "pretrained" in kwargs and kwargs["pretrained"]:
             url = "http://217.160.46.216/download/tf_english2french"
             model_folder = download_file(url)
             self.load_weights(model_folder)
+        """
 
     def call(self, input):
         context, x = input
@@ -296,6 +298,11 @@ class Transformer(tf.keras.Model):
         
         result = self.decoder.convert_to_text(x)
         return result
+    
+    def load_pretrained_weights(self):
+        url = "http://217.160.46.216/download/tf_english2french"
+        model_folder = download_file(url)
+        self.load_weights(model_folder)
     
 @dataclass
 class TranslatorConfig():
