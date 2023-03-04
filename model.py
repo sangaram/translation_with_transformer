@@ -5,6 +5,9 @@ from preprocessing import tf_lower_and_split_punct
 import pickle
 from dataclasses import dataclass
 import os
+import warnings
+
+warnings.filterwarnings("ignore")
 
 '''
 Full Transformer model implementation in this single file.
@@ -319,6 +322,10 @@ class Translator(tf.Module):
             expansion=config.expansion,
             num_layers=config.num_layers
         )
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            self.transformer.load_weights(os.path.join(current_dir, 'tf_english2french/tf_english2french_weights'))
 
     def __call__(self, texts):
         results = self.transformer.translate(texts)
