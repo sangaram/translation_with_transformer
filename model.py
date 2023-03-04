@@ -2,6 +2,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras.layers import TextVectorization
 from preprocessing import tf_lower_and_split_punct
+from utils.helpers import download_file
 import pickle
 from dataclasses import dataclass
 import os
@@ -247,7 +248,7 @@ class Decoder(tf.keras.layers.Layer):
         return result
     
 class Transformer(tf.keras.Model):
-    def __init__(self, context_text_processor, target_text_processor, d_model, num_heads=1, expansion=2, num_layers=2):
+    def __init__(self, context_text_processor, target_text_processor, d_model, num_heads=1, expansion=2, num_layers=2, **kwargs):
         super(Transformer, self).__init__()
         
         self.vocab_size = context_text_processor.vocabulary_size()
@@ -269,6 +270,11 @@ class Transformer(tf.keras.Model):
             expansion=expansion,
             num_layers=num_layers
         )
+
+        if "pretrained" in kwargs and kwargs["pretrained"]:
+            url = "http://217.160.46.216/download/tf_english2french"
+            model_folder = download_file(url)
+            self.load_weights(model_folder)
 
     def call(self, input):
         context, x = input
@@ -320,12 +326,15 @@ class Translator(tf.Module):
             d_model=config.d_model,
             num_heads=config.num_heads,
             expansion=config.expansion,
-            num_layers=config.num_layers
+            num_layers=config.num_layers,
+            pretrained=True
         )
 
+        """
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             self.transformer.load_weights(os.path.join(current_dir, 'tf_english2french/tf_english2french_weights'))
+        """
 
     def __call__(self, texts):
         results = self.transformer.translate(texts)
