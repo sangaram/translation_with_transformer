@@ -11,7 +11,7 @@ if len(sys.argv) == 1:
 env_name = sys.argv[1]
 
 ROOT = os.getcwd() # Project root direcoty environment variable
-config = f"{config}\nROOT={ROOT}"
+config = f"{config}\nexport ROOT={ROOT}"
 
 # Saving all the environment variables
 with open(os.path.join(ROOT, f"{env_name}/bin/activate"), "a") as f:
