@@ -1,4 +1,4 @@
-import tqdm
+from tqdm.auto import tqdm
 import requests
 import re
 import shutil
