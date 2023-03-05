@@ -1,9 +1,8 @@
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.layers import TextVectorization
-from preprocessing import tf_lower_and_split_punct
+import tensorflow_text as tf_text 
+from tensorflow_text.tools.wordpiece_vocab import bert_vocab_from_dataset as bert_vocab
 from utils.helpers import download_file
-import pickle
 from dataclasses import dataclass
 import os
 import warnings
@@ -17,11 +16,12 @@ Reference: https://arxiv.org/pdf/1706.03762.pdf
 
 
 # Global variables
-MAX_LENGTH = 1024
-D_MODEL = 256
-NUM_HEADS = 8
-EXPANSION = 4
-NUM_LAYERS = 4
+max_length = 1024
+vocab_size = 8000
+d_model = 256
+num_heads = 8
+expansion = 4
+num_layers = 4
 
 class ScaledDotProductAttention(tf.keras.layers.Layer):
     def __init__(self, d_model, with_mask=False):
@@ -33,7 +33,7 @@ class ScaledDotProductAttention(tf.keras.layers.Layer):
         self.wValue = tf.keras.layers.Dense(d_model, use_bias=False)
         self.mask = None
         if with_mask:
-            self.mask = tf.constant(np.triu(np.full((MAX_LENGTH, MAX_LENGTH), float("-inf")), k=1), dtype=tf.float32)
+            self.mask = tf.constant(np.triu(np.full((max_length, max_length), float("-inf")), k=1), dtype=tf.float32)
 
 
     def call(self, query, key, value):
@@ -147,7 +147,7 @@ class EncoderBloc(tf.keras.layers.Layer):
         ])
 
     def call(self, x):
-        B, L, D = x.shape
+        #B, L, D = x.shape
         attention = self.attention_layer(query=x, key=x, value=x)   # (batch_size, seq, d_model)
         #print(f"B={B}, L={L}, D={D}")
         #print(f"x shape: {(B, L, D)}")
@@ -157,10 +157,12 @@ class EncoderBloc(tf.keras.layers.Layer):
         return out
 
 class Encoder(tf.keras.layers.Layer):
-    def __init__(self, text_processor, d_model, num_heads=1, expansion=2, num_layers=2):
+    def __init__(self, text_tokenizer, vocab_size, d_model, num_heads=1, expansion=2, num_layers=2):
         super(Encoder, self).__init__()
-        self.text_processor = text_processor
-        self.vocab_size = text_processor.vocabulary_size()
+        self.text_tokenizer = text_tokenizer
+        self.vocab_size = vocab_size
+        self.start_token = text_tokenizer.start_id
+        self.end_token = text_tokenizer.end_id
         self.d_model = d_model
         self.num_heads = num_heads
         self.expansion = expansion
@@ -174,11 +176,15 @@ class Encoder(tf.keras.layers.Layer):
         return self.encoder_blocs(self.embedding(x))
 
     def convert_input(self, texts):
+        batch_size = texts.shape[0]
         texts = tf.convert_to_tensor(texts)
         if len(tf.shape(texts)) == 0:
             texts = texts[tf.newaxis, :]
-        context = self.text_processor(texts).to_tensor()
-        context = self(context)
+        context = self.text_tokenizer.tokenize(texts).merge_dims(-2, -1).to_tensor()
+        start_tokens = tf.cast(tf.fill([batch_size, 1], self.start_token), dtype=tf.int64)
+        end_tokens = tf.cast(tf.fill([batch_size, 1], self.end_token), dtype=tf.int64)
+        context = tf.concat([start_tokens, context, end_tokens], axis=-1)
+        context = self(context, training=False)
         return context
     
 class DecoderBloc(tf.keras.layers.Layer):
@@ -203,19 +209,12 @@ class DecoderBloc(tf.keras.layers.Layer):
         return out
 
 class Decoder(tf.keras.layers.Layer):
-    def __init__(self, text_processor, d_model, num_heads=1, expansion=2, num_layers=2):
+    def __init__(self, text_tokenizer, vocab_size, d_model, num_heads=1, expansion=2, num_layers=2):
         super(Decoder, self).__init__()
-        self.text_processor = text_processor
-        self.vocab_size = text_processor.vocabulary_size()
-        self.word_to_id = tf.keras.layers.StringLookup(
-        vocabulary=text_processor.get_vocabulary(),
-        mask_token='', oov_token='[UNK]')
-        self.id_to_word = tf.keras.layers.StringLookup(
-            vocabulary=text_processor.get_vocabulary(),
-            mask_token='', oov_token='[UNK]',
-            invert=True)
-        self.start_token = self.word_to_id('[START]')
-        self.end_token = self.word_to_id('[END]')
+        self.text_tokenizer = text_tokenizer
+        self.vocab_size = vocab_size
+        self.start_token = text_tokenizer.start_id
+        self.end_token = text_tokenizer.end_id
         self.d_model = d_model
         self.num_heads = num_heads
         self.expansion = expansion
@@ -234,37 +233,41 @@ class Decoder(tf.keras.layers.Layer):
         return logits
 
     def get_next_token(self, context, x, done):
-        logits = self(context, x)   # (batch_size, seq, vocab_size)
+        logits = self(context, x, training=False)   # (batch_size, seq, vocab_size)
         tokens = tf.argmax(logits[:, -1, :], axis=-1)[:, tf.newaxis]   # (batch_size, 1)
         done = done | (tokens == self.end_token)
         tokens = tf.where(done, tf.constant(0, dtype=tf.int64), tokens)
         return tokens, done
 
     def convert_to_text(self, tokens):
-        words = self.id_to_word(tokens)
+        words = self.text_tokenizer.detokenize(tokens)
         result = tf.strings.reduce_join(words, axis=-1, separator=' ')
+        result = tf.strings.regex_replace(result, " ' ", "'")
+        result = tf.strings.regex_replace(result, " - ", "-")
         result = tf.strings.regex_replace(result, '^ *\[START\] *', '')
+        result = tf.strings.regex_replace(result, ' *\[PAD\] *', '')
         result = tf.strings.regex_replace(result, ' *\[END\] *$', '')
         return result
     
 class Transformer(tf.keras.Model):
-    def __init__(self, context_text_processor, target_text_processor, d_model, num_heads=1, expansion=2, num_layers=2, **kwargs):
+    def __init__(self, context_tokenizer, target_tokenizer, vocab_size, d_model, num_heads=1, expansion=2, num_layers=2, **kwargs):
         super(Transformer, self).__init__()
-        
-        self.vocab_size = context_text_processor.vocabulary_size()
+        self.vocab_size = vocab_size
         self.d_model = d_model
         self.num_heads = num_heads
         self.expansion = expansion
         self.num_layers = num_layers
         self.encoder = Encoder(
-            text_processor=context_text_processor,
+            text_tokenizer=context_tokenizer,
+            vocab_size=vocab_size,
             d_model=d_model,
             num_heads=num_heads,
             expansion=expansion,
             num_layers=num_layers
         )
         self.decoder = Decoder(
-            text_processor=target_text_processor,
+            text_tokenizer=target_tokenizer,
+            vocab_size=vocab_size,
             d_model=d_model,
             num_heads=num_heads,
             expansion=expansion,
@@ -286,7 +289,7 @@ class Transformer(tf.keras.Model):
         logits = self.decoder(context, x)
         return logits
 
-    def translate(self, texts, max_length=MAX_LENGTH):
+    def translate(self, texts, max_length=max_length):
         context = self.encoder.convert_input(texts) # (batch_size, seq, d_model)
         batch_size = tf.shape(context)[0]
         start_tokens = tf.fill([batch_size, 1], self.decoder.start_token) # (batch_size, 1)
@@ -301,33 +304,48 @@ class Transformer(tf.keras.Model):
         result = self.decoder.convert_to_text(x)
         return result
     
+class Tokenizer(tf.Module):
+    def __init__(self, vocab_lookup_table, reserved_tokens, start_token, end_token):
+        self.bert_tokenizer = tf_text.BertTokenizer(vocab_lookup_table, lower_case=True)
+        self.reserved_tokens = reserved_tokens
+        self.start_id = tf.argmax(tf.constant(reserved_tokens) == start_token)
+        self.end_id = tf.argmax(tf.constant(reserved_tokens) == end_token)
+
+    def tokenize(self, text_input):
+        return self.bert_tokenizer.tokenize(text_input)
+
+    def detokenize(self, token_ids):
+        return self.bert_tokenizer.detokenize(token_ids)
+    
     
 @dataclass
 class TranslatorConfig():
-    d_model:int = D_MODEL
-    num_heads:int = NUM_HEADS
-    num_layers:int = NUM_LAYERS
-    expansion:int = EXPANSION
+    d_model:int = d_model
+    num_heads:int = num_heads
+    num_layers:int = num_layers
+    expansion:int = expansion
 
 
 class Translator(tf.Module):
     def __init__(self, config):
-        #super().__init__()
+        super().__init__()
         self.config = config
 
-        current_dir = os.getcwd()
-        context_config = pickle.load(open(os.path.join(current_dir, 'encoding/context_encoder/context_tokenizer.pkl'), 'rb'))
-        context_config['config']['standardize'] = tf_lower_and_split_punct
-        target_config = pickle.load(open(os.path.join(current_dir, 'encoding/target_encoder/target_tokenizer.pkl'), 'rb'))
-        target_config['config']['standardize'] = tf_lower_and_split_punct
-        context_text_processor = TextVectorization.from_config(context_config['config'])
-        context_text_processor.set_vocabulary(context_config['vocabulary'])
-        target_text_processor = TextVectorization.from_config(target_config['config'])
-        target_text_processor.set_vocabulary(target_config['vocabulary'])
+        ROOT = os.getenv("ROOT")
+        if ROOT is None:
+            raise Exception("Error: environment variable ROOT must be set. Please execute setup.py to solve this problem.")
+        
+        
+        reserved_tokens = ["[PAD]", "[UNK]", "[START]", "[END]"]
+        start_token = "[START]"
+        end_token = "[END]"
+        context_tokenizer = Tokenizer(os.path.join(ROOT, "encoding/context_tokenizer/english_vocab.txt"), reserved_tokens, start_token, end_token)
+        target_tokenizer = Tokenizer(os.path.join(ROOT, "encoding/target_tokenizer/french_vocab.txt"), reserved_tokens, start_token, end_token)
 
         self.transformer = Transformer(
-            context_text_processor=context_text_processor,
-            target_text_processor=target_text_processor,
+            context_tokenizer=context_tokenizer,
+            target_tokenizer=target_tokenizer,
+            vocab_size=vocab_size,
             d_model=config.d_model,
             num_heads=config.num_heads,
             expansion=config.expansion,
