@@ -271,12 +271,14 @@ class Transformer(tf.keras.Model):
             num_layers=num_layers
         )
 
-        """
+        
         if "pretrained" in kwargs and kwargs["pretrained"]:
             url = "http://217.160.46.216/download/tf_english2french"
             model_folder = download_file(url)
+            dummy_batch_context = tf.constant(np.random.randint(low=0, high=10, size=(1, 10), dtype=np.int64))
+            dummy_batch_targ = tf.constant(np.random.randint(low=0, high=10, size=(1, 10), dtype=np.int64))
+            self((dummy_batch_context, dummy_batch_targ)) # To initialize model weights
             self.load_weights(model_folder)
-        """
 
     def call(self, input):
         context, x = input
@@ -299,10 +301,6 @@ class Transformer(tf.keras.Model):
         result = self.decoder.convert_to_text(x)
         return result
     
-    def load_pretrained_weights(self):
-        url = "http://217.160.46.216/download/tf_english2french"
-        model_folder = download_file(url)
-        self.load_weights(model_folder)
     
 @dataclass
 class TranslatorConfig():
@@ -334,15 +332,8 @@ class Translator(tf.Module):
             num_heads=config.num_heads,
             expansion=config.expansion,
             num_layers=config.num_layers,
+            pretrained=True
         )
-
-        self.transformer.load_pretrained_weights()
-
-        """
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            self.transformer.load_weights(os.path.join(current_dir, 'tf_english2french/tf_english2french_weights'))
-        """
 
     def __call__(self, texts):
         results = self.transformer.translate(texts)

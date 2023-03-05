@@ -27,10 +27,10 @@ def download_file(url:str):
     content_length = int(res.headers['Content-Length'])
     chunk_size = 8192
 
-    folder = filename.split('.')[0]
+    basename = filename.split('.')[0]
 
     filename = os.path.join(CACHE_DIR, filename)
-    folder = os.path.join(CACHE_DIR, folder)
+    folder = os.path.join(CACHE_DIR, basename)
 
     if os.path.exists(folder):
         print(f"File {filename} has already been downloaded, skipping download")
@@ -51,4 +51,6 @@ def download_file(url:str):
         os.remove(filename)
         print("Done.")
 
-    return folder
+    model_filename = f"{folder}/{basename}_weights"
+
+    return model_filename
