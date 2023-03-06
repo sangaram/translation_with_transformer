@@ -1,8 +1,7 @@
 import numpy as np
 import tensorflow as tf
-import tensorflow_text as tf_text 
-from tensorflow_text.tools.wordpiece_vocab import bert_vocab_from_dataset as bert_vocab
-from utils.helpers import download_file
+import tensorflow_text as tf_text
+from utils.helpers import download_model
 from dataclasses import dataclass
 import os
 import warnings
@@ -65,19 +64,14 @@ class MultiHeadAttention(tf.keras.layers.Layer):
             self.out_layer = tf.keras.layers.Dense(d_model)
 
     def call(self, query, key, value):
-        #print(f"query shape: {query.shape}")
-        #print(f"key shape: {key.shape}")
-        #print(f"value shape: {value.shape}")
         head_attentions = [
             head(query, key, value) for head in self.heads
         ]
 
         if self.num_heads == 1:
-            #print(f"attention shape: {head_attentions[0].shape}")
             return head_attentions[0] # (batch_size, seq, d_model)
         else:
             concat_head = tf.concat(head_attentions, axis=-1)
-            #print(f"concat_head shape: {concat_head.shape}")
             attention = self.out_layer(concat_head) # (batch_size, seq, d_model)
             return attention
         
@@ -147,11 +141,7 @@ class EncoderBloc(tf.keras.layers.Layer):
         ])
 
     def call(self, x):
-        #B, L, D = x.shape
         attention = self.attention_layer(query=x, key=x, value=x)   # (batch_size, seq, d_model)
-        #print(f"B={B}, L={L}, D={D}")
-        #print(f"x shape: {(B, L, D)}")
-        #print(f"attention shape: {attention.shape}")
         attention = self.norm(x + attention)
         out = self.norm(attention + self.ffn(attention))
         return out
@@ -276,12 +266,17 @@ class Transformer(tf.keras.Model):
 
         
         if "pretrained" in kwargs and kwargs["pretrained"]:
-            url = "http://217.160.46.216/download/tf_english2french"
-            model_folder = download_file(url)
+            if not("model_path" in kwargs):
+                raise Exception("Error: if pretrained is true, then model_path must be specified")
+            
+            model_path = kwargs["model_path"]
+            if model_path.starswith("http://") or model_path.startswith("https://"):
+                model_path = download_model(url=model_path)
+
             dummy_batch_context = tf.constant(np.random.randint(low=0, high=10, size=(1, 10), dtype=np.int64))
             dummy_batch_targ = tf.constant(np.random.randint(low=0, high=10, size=(1, 10), dtype=np.int64))
             self((dummy_batch_context, dummy_batch_targ)) # To initialize model weights
-            self.load_weights(model_folder)
+            self.load_weights(model_path)
 
     def call(self, input):
         context, x = input
@@ -319,16 +314,21 @@ class Tokenizer(tf.Module):
     
     
 @dataclass
-class TranslatorConfig():
+class TranslatorConfig:
+    context_vocab_file:str = "encoding/context_tokenizer/english_vocab.txt"
+    target_vocab_file:str = "encoding/target_tokenizer/french_vocab.txt"
+    vocab_size:int = vocab_size
     d_model:int = d_model
     num_heads:int = num_heads
     num_layers:int = num_layers
     expansion:int = expansion
+    model_path:str = "http://217.160.46.216/download/tf_english2french"
 
 
 class Translator(tf.Module):
     def __init__(self, config):
         super().__init__()
+        assert isinstance(config, TranslatorConfig)
         self.config = config
 
         ROOT = os.getenv("ROOT")
@@ -339,18 +339,19 @@ class Translator(tf.Module):
         reserved_tokens = ["[PAD]", "[UNK]", "[START]", "[END]"]
         start_token = "[START]"
         end_token = "[END]"
-        context_tokenizer = Tokenizer(os.path.join(ROOT, "encoding/context_tokenizer/english_vocab.txt"), reserved_tokens, start_token, end_token)
-        target_tokenizer = Tokenizer(os.path.join(ROOT, "encoding/target_tokenizer/french_vocab.txt"), reserved_tokens, start_token, end_token)
+        context_tokenizer = Tokenizer(os.path.join(ROOT, config.context_vocab_file), reserved_tokens, start_token, end_token)
+        target_tokenizer = Tokenizer(os.path.join(ROOT, config.target_vocab_file), reserved_tokens, start_token, end_token)
 
         self.transformer = Transformer(
             context_tokenizer=context_tokenizer,
             target_tokenizer=target_tokenizer,
-            vocab_size=vocab_size,
+            vocab_size=config.vocab_size,
             d_model=config.d_model,
             num_heads=config.num_heads,
             expansion=config.expansion,
             num_layers=config.num_layers,
-            pretrained=True
+            pretrained=True,
+            model_path=config.model_path
         )
 
     def __call__(self, texts):

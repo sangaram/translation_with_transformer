@@ -1,4 +1,3 @@
-import requests
 import numpy as np
 import tensorflow as tf
 from model import Tokenizer
@@ -39,13 +38,7 @@ def process_text(
 # -------------------------------------------------------
 
 data_dir = os.path.dirname(__file__)
-url = "https://raw.githubusercontent.com/sangaram/pytorch_translation/main/datasets/fra-eng/fra.txt"
-response = requests.get(url)
-data_raw = response.content.decode("utf-8")
-
-with open(os.path.join(data_dir, "raw_data.txt"), "w") as f:
-    f.write(data_raw)
-
+data_raw = open(os.path.join(data_dir, "en_fr.txt"), 'r').read()
 
 contexts, targets = clean_data(data_raw)
 

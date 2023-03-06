@@ -1,3 +1,26 @@
+"""
+This file allow to train or finetune the Transformer.
+
+To use it, first properly prepaire the train and validation sets in the "datasets" folder.
+The train and validation must be saved in two separate files.
+The naming convention is <dataset-path>/train_data for the training set and <dataset-path>/val_data for the validation set
+
+Below there are already default values defined for data_dir, out_dir
+You can train the model with the default values by simply executing this file without any command line parameter: python train.py
+
+To train the model with custom values of data_dir and out_dir, specify the values in command line as arguments of this file: python train.py --data_dir=<data_dir_path> --out_dir=<out_dir_path>
+Here <data_dir_path> and <out_dir_path> are just placeholders of the actual values of data_dir and out_dir.
+
+The model also have some parameters:
+vocab_size
+d_model
+num_heads
+expansion
+num_layers
+
+You can customize them by specifying then in command line in the same way
+"""
+
 import tensorflow as tf
 import tensorflow_text as tf_text
 import matplotlib.pyplot as plt
@@ -8,22 +31,35 @@ ROOT = os.getenv("ROOT")
 if ROOT is None:
     raise Exception("Error: environment variable ROOT must be set. Please execute setup.py to solve this problem.")
 
-
-data_dir = os.path.join(ROOT, "datasets/en_fr")
+#----------------------------------------------
+# Default training variable values
+data_dir = os.path.join(ROOT, "datasets/en_fr") # where the train and validation set files are
+dataset_name = os.path.basename(data_dir)
+out_dir = os.path.join(ROOT, f"out/{dataset_name}") # where the model weights are going to be saved
+# Default model parameters
+vocab_size = 8000
+d_model = 256
+num_heads = 8
+expansion = 4
+num_layers = 4
+# Using custom values if specified in command line
+exec(open(os.path.join(ROOT, "arg_parser.py"), "r").read())
+#----------------------------------------------
 train_set_path = os.path.join(data_dir, "train_data")
-test_set_path = os.path.join(data_dir, "val_data")
+val_set_path = os.path.join(data_dir, "val_data")
+#----------------------------------------------
 
 if not(os.path.exists(train_set_path)):
     raise Exception(f"Error: {train_set_path} doesn't exist. Please execute prepare.py")
 
-if not(os.path.exists(test_set_path)):
+if not(os.path.exists(val_set_path)):
     raise Exception(f"Error: {train_set_path} doesn't exist. Please execute prepare.py")
 
 
 # Loading train and test sets
 
 train_set = tf.data.Dataset.load(train_set_path)
-test_set = tf.data.Dataset.load(test_set_path)
+val_set = tf.data.Dataset.load(val_set_path)
 
 # Defining training scheduler according Attention is all you need paper: https://arxiv.org/pdf/1706.03762.pdf
 class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
@@ -78,12 +114,6 @@ def masked_acc(y_true, y_pred):
     return tf.reduce_sum(match)/tf.reduce_sum(mask)
 
 
-d_model = 256
-vocab_size = 8000
-num_heads = 8
-expansion = 4
-num_layers = 4
-
 # Defining the Transformer for training
 reserved_tokens = ["[PAD]", "[UNK]", "[START]", "[END]"]
 start_token = "[START]"
@@ -104,8 +134,7 @@ transformer = Transformer(
 # Defining the learning rate scheduler and the optimizer
 learning_rate = CustomSchedule(d_model)
 
-optimizer = tf.keras.optimizers.Adam(learning_rate, beta_1=0.9, beta_2=0.98,
-                                     epsilon=1e-9)
+optimizer = tf.keras.optimizers.Adam(learning_rate, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
 
 # Training
 transformer.compile(
@@ -118,7 +147,7 @@ history = transformer.fit(
     train_set.repeat(), 
     epochs=100,
     steps_per_epoch = 100,
-    validation_data=test_set,
+    validation_data=val_set,
     validation_steps = 20,
     callbacks=[
         tf.keras.callbacks.EarlyStopping(patience=5)])
@@ -135,3 +164,8 @@ ax.grid()
 
 
 # Saving learned weights
+if not(os.path.exists(out_dir)):
+    os.makedirs(out_dir)
+
+transformer.save_weights(f"{out_dir}/weigths")
+print(f"Training completed, trained weights have been saved to {out_dir}/weigths")

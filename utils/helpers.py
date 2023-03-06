@@ -4,13 +4,13 @@ import re
 import shutil
 import os
 
-def download_file(url:str):
+def download_model(url:str):
     """ Downloads the model's weigths in a zip file and extracts it in the cache
     Arg:
         url (str): URL of the model
     
     Returns:
-        folder (srt): the folder name of the model in the cache
+        model_path (srt): the file path of the model in the cache
     """
 
     PROJECT_ROOT = os.getenv("ROOT")
@@ -51,6 +51,6 @@ def download_file(url:str):
         os.remove(filename)
         print("Done.")
 
-    model_filename = f"{folder}/{basename}_weights"
+    model_path = f"{folder}/{basename}_weights"
 
-    return model_filename
+    return model_path
