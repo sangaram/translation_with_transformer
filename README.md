@@ -1,8 +1,9 @@
 # Translation task with Transformer
 Implementation from sratch of the Transformer with Tensorflow and application to English to French translation.
 
-Reference:
+References:
 - [Attention is all you need](https://arxiv.org/pdf/1706.03762.pdf)
+- [Beam Decoding with Controlled Patience](https://arxiv.org/pdf/2204.05424.pdf)
 
 ![repro124m](assets/training_curve.png)
 
