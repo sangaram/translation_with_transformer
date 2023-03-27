@@ -1,4 +1,4 @@
-# Translation task with Transformer
+# NMT with a Transformer
 Implementation from sratch of the Transformer with Tensorflow and application to English to French translation.
 
 References:
