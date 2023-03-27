@@ -1,7 +1,8 @@
 # Translation task with Transformer
 Implementation from sratch of the Transformer with Tensorflow and application to English to French translation.
 
-Not as good as a state-of-the-art translator but works pretty well for an experimentation purpose.
+Reference:
+- [Attention is all you need](https://arxiv.org/pdf/1706.03762.pdf)
 
 ![repro124m](assets/training_curve.png)
 
